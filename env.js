@@ -1,0 +1,19 @@
+ var client_id = "0oa9n0vclhQbIkZVm0x7";
+ var redirect_uri = "https://anarabanana.github.io/jamf-enrollment/";
+ var api = "https://knauf.oktapreview.com/";
+ var authz = "https://knauf.oktapreview.com/oauth2";
+ var orgz = "https://knauf.oktapreview.com/oauth2/";
+ var state = "";
+ var nonce = "RandomNonce";
+ var scope = "profile openid";
+ var org_scopes = "okta.users.manage.self";
+
+ /*var client_id = "0oa5do0vvdCfgacdI0x7";
+ var redirect_uri = "https://idp.okta.antonherber.de/okta/henkel/";
+ var api = "https://oie.antonherber.de/";
+ var authz = "https://oie.antonherber.de/oauth2/default";
+ var orgz = "https://oie.antonherber.de/oauth2/";
+ var state = "";
+ var nonce = "RandomNonce";
+ var scope = "profile openid mobileenrollment";
+ var org_scopes = "okta.users.manage.self";*/

@@ -1,0 +1,487 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>JAMF Enrollment</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="" />
+    <meta name="keywords" content="" />
+    <meta name="author" content="" />
+
+    <!-- Facebook and Twitter integration -->
+    <meta property="og:title" content="" />
+    <meta property="og:image" content="" />
+    <meta property="og:url" content="" />
+    <meta property="og:site_name" content="" />
+    <meta property="og:description" content="" />
+    <meta name="twitter:title" content="" />
+    <meta name="twitter:image" content="" />
+    <meta name="twitter:url" content="" />
+    <meta name="twitter:card" content="" />
+
+    <link href="https://fonts.googleapis.com/css?family=Poppins:300,400,500,600" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400" rel="stylesheet">
+
+    <!-- Animate.css -->
+    <link rel="stylesheet" href="css/animate.css">
+    <!-- Icomoon Icon Fonts-->
+    <link rel="stylesheet" href="css/icomoon.css">
+    <!-- Bootstrap  -->
+    <link rel="stylesheet" href="css/bootstrap.css">
+
+    <!-- Magnific Popup -->
+    <link rel="stylesheet" href="css/magnific-popup.css">
+
+    <!-- Owl Carousel -->
+    <link rel="stylesheet" href="css/owl.carousel.min.css">
+    <link rel="stylesheet" href="css/owl.theme.default.min.css">
+
+    <!-- Theme style  -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Modernizr JS -->
+    <script src="js/modernizr-2.6.2.min.js"></script>
+    <!-- FOR IE9 below -->
+    <!--[if lt IE 9]>
+		<script src="js/respond.min.js"></script>
+		<![endif]-->
+
+    <!-- sha256 code verifier -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.min.js"></script>
+    <script src="js/okta-oauth-functions.js"></script>
+
+    <!-- import config -->
+    <script type="text/javascript" src="env.js">
+    </script>
+
+    <!-- Okta functions -->
+    <script>
+        // Check for Access Token in parametetr (implicit grant) after loading the page
+        window.onload = function() {
+            var token = getParameterByName("access_token", window.location.href);
+            var code = getParameterByName("code", window.location.href);
+            var error = getParameterByName("error", window.location.href);
+            var state = getParameterByName("state", window.location.href);
+            if (code && state == "orgz") {
+                printStatus("Authorizing...", "Please wait.");
+                var verifier = sessionStorage.getItem("org-verifier");
+                document.getElementById("pkcediv").style.display = "block";
+                document.getElementById("codediv").innerHTML = "Please wait while we obtain the Access Token from Org Server.";
+                document.getElementById("authcodeinput").value = code;
+                document.getElementById("implicitdiv2").style.display = "none";
+                document.getElementById("implicitdiv1").style.display = "none";
+                setTimeout(getAccessTokenForOrgPKCE(), 2000);
+            } else if (code && state == "default") {
+                printStatus("Authorizing...", "Please wait.");
+                var verifier = sessionStorage.getItem("default-verifier");
+                document.getElementById("pkcediv").style.display = "block";
+                document.getElementById("codediv").innerHTML = "Please wait while we obtain the Access Token from default Server.";
+                document.getElementById("authcodeinput").value = code;
+                document.getElementById("implicitdiv2").style.display = "none";
+                document.getElementById("implicitdiv1").style.display = "none";
+                setTimeout(getAccessTokenPKCE(), 2000);
+            } else if (error) {
+                printStatus("Failure", "Something went wrong!");
+                fail_success("There was an error processing your request: <b>" + getParameterByName("error", window.location.href) + "</b> (" + getParameterByName("error_description", window.location.href) + ")<br><br>");
+            } else {
+                // set default phone Type initially
+                localStorage.setItem("phoneType", "iPhone");
+            }
+        }
+
+        //Parse the base64 Access Token
+        function parseJwt(token) {
+            var base64Url = token.split('.')[1];
+            var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            var jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        };
+
+        // Extract parameters from URL
+        function getParameterByName(name, url) {
+            name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
+            var regex = new RegExp("[\\?&#]" + name + "=([^&#]*)"),
+                results = regex.exec(url);
+            return results == null ? "" :
+                decodeURIComponent(results[1].replace(/\+/g, " "));
+        }
+
+        // Redirect for PKCE flow to Default Server
+        function invokeAuthCodePKCE() {
+            var verifier = generateCodeVerifier();
+            var challenge = generateCodeChallenge(verifier);
+            console.log("Generated Default Verifier: " + verifier);
+            console.log("Generated Default Challenge: " + challenge);
+            sessionStorage.setItem("default-verifier", verifier);
+            window.location.replace(authz + "/v1/authorize?client_id=" + client_id + "&code_challenge=" + challenge + "&code_challenge_method=S256&state=" + "default" + "&scope=" + scope + "&redirect_uri=" + redirect_uri + "&response_type=code&response_mode=fragment&nonce=nonce123");
+        }
+
+        //redirect for PKCE flow to Org Server
+        function invokeAuthCodePKCEToOrgServer() {
+            var verifier = generateCodeVerifier();
+            var challenge = generateCodeChallenge(verifier);
+            console.log("Generated OrgZ Verifier: " + verifier);
+            console.log("Generated OrgZ Challenge: " + challenge);
+            sessionStorage.setItem("org-verifier", verifier);
+            window.location.replace(orgz + "/v1/authorize?client_id=" + client_id + "&code_challenge=" + challenge + "&code_challenge_method=S256&state=" + "orgz" + "&scope=" + org_scopes + "&redirect_uri=" + redirect_uri + "&response_type=code&response_mode=fragment&nonce=nonce123");
+        }
+
+        /* 
+        	get Userinfo 
+        	- will be checked every 5 seconds make sure the user is assigned to the group
+        */
+        function getUserInfo(access_token, intervalId) {
+            // var baseUrl = 'https://oie.antonherber.de';
+            var baseUrl = 'https://knauf.oktapreview.com';
+            var xhr = new XMLHttpRequest();
+            const headers = {
+                'Authorization': access_token
+            };
+            if ("withCredentials" in xhr) {
+                xhr.onerror = function() {
+
+                }
+                xhr.onload = function() {
+                    console.log("Userinfo:");
+                    console.log(this.responseText);
+                    var json = JSON.parse(this.responseText);
+                    console.log("json.mobileenrollment:");
+                    console.log(json.mobileenrollment);
+                    if (json.mobileenrollment) {
+                        console.log(json.name + " was added to Exception group: " + json.mobileenrollment);
+                        printStatus("SUCCESS", "You can now enroll your shiny new <b>" + localStorage.getItem("phoneType") + "</b>, " + json.name + "!")
+                        document.getElementById("implstatusdiv2").innerHTML = "Your phone enrollment has been approved and authorized for <b>15 Minutes</b>. Please enroll your phone now." + "<br><br>Have much fun with your new device!";
+                        document.getElementById("successdiv").style.display = "block";
+                        document.getElementById("implicitdiv2").style.display = "block";
+                        clearInterval(intervalId);
+                    } else {
+                        console.log("Waiting for " + json.name + " to be added to Exception group: ");
+                    }
+                };
+                xhr.open('GET', baseUrl + '/oauth2/v1/userinfo', true);
+                console.log("Using Access Token to make the request");
+                console.log(access_token);
+                xhr.setRequestHeader("Authorization", "Bearer " + access_token)
+                xhr.withCredentials = true;
+                xhr.send();
+            } else {
+                alert("CORS is not supported for this browser!")
+            }
+        }
+
+        // set Attribute for the user with the minted Org Token
+        function startEnrollment() {
+            var request = new XMLHttpRequest();
+            var phoneType = localStorage.getItem("phoneType");
+            var orgToken = localStorage.getItem("OrgAccessToken");
+            console.log("Org Token:");
+            console.log(orgToken);
+            console.log("Will now start enrollment for phone: " + phoneType);
+            request.open("POST", api + "api/v1/users/me", true);
+            request.setRequestHeader("Accept", "application/json");
+            request.setRequestHeader("Authorization", "Bearer " + orgToken);
+            request.setRequestHeader("Content-Type", "application/json");
+            request.setRequestHeader("Cache-Control", "no-cache");
+
+            request.onreadystatechange = function() {
+                if (request.readyState === 4 && request.status === 200) {
+                    var json = JSON.parse(request.responseText);
+                    console.log("Response:");
+                    console.log(json);
+                } else if (request.readyState === 4 && request.status === 401) {
+                    console.log("FORBIDDEN!");
+                    console.log("Status: " + request.responseText);
+                    document.getElementById("validatestatusdiv1").innerHTML = "Something went wrong. Check return Status!" + "<br><br>";
+                    document.getElementById("validatestatusdiv1").style.display = "block";
+                    printStatus("FORBIDDEN!", "Could not exchange Code tor Token!");
+                }
+            };
+            var data = JSON.stringify({
+                "profile": {
+                    "jamf_enrollment": new String(phoneType)
+                }
+            });
+            request.send(data);
+        }
+
+        // get Access Token for the Code (against Org Server)
+        function getAccessTokenForOrgPKCE() {
+            var request = new XMLHttpRequest();
+            var verifier = sessionStorage.getItem("org-verifier");
+            var code = document.getElementById("authcodeinput").value;
+            console.log("Will now get Access Token for Code: " + code);
+            request.open("POST", orgz + "/v1/token", true);
+            request.setRequestHeader("Accept", "application/json");
+            request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            request.setRequestHeader("Cache-Control", "no-cache");
+
+            request.onreadystatechange = function() {
+                if (request.readyState === 4 && request.status === 200) {
+                    var json = JSON.parse(request.responseText);
+                    console.log("Sub:");
+                    var access_token_claims = parseJwt(json.access_token);
+                    console.log("Org Access Token:");
+                    console.log(json.access_token);
+                    document.getElementById("pkcediv").style.display = "none";
+                    document.getElementById("accesstokendiv").innerHTML = "Text" + "<br><br><br>";
+                    document.getElementById("validatestatusdiv1").style.display = "block";
+                    document.getElementById("implicitdiv2").style.display = "block";
+                    if (access_token_claims.sub) {
+                        localStorage.setItem("OrgAccessToken", json.access_token);
+                        invokeAuthCodePKCE();
+                    } else {
+                        printStatus("Error!", "Something went wrong. Check the Console!");
+                    }
+                } else if (request.readyState === 4 && request.status === 401) {
+                    console.log("FORBIDDEN!");
+                    console.log("Status: " + request.responseText);
+                    document.getElementById("validatestatusdiv1").innerHTML = "Something went wrong. Check return Status!" + "<br><br>";
+                    document.getElementById("validatestatusdiv1").style.display = "block";
+                    printStatus("FORBIDDEN!", "Could not exchange Code tor Token!");
+                }
+            };
+            var data = "client_id=" + client_id + "&code_verifier=" + verifier + "&redirect_uri=" + redirect_uri + "&grant_type=authorization_code&code=" + code;
+            request.send(data);
+        }
+
+        //get Access Token for the Code (default Org Server)
+        function getAccessTokenPKCE() {
+            var request = new XMLHttpRequest();
+            var verifier = sessionStorage.getItem("default-verifier");
+            var code = document.getElementById("authcodeinput").value;
+            console.log("Will now get Access Token for Code: " + code);
+            request.open("POST", authz + "/v1/token", true);
+            request.setRequestHeader("Accept", "application/json");
+            request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            request.setRequestHeader("Cache-Control", "no-cache");
+
+            request.onreadystatechange = function() {
+                if (request.readyState === 4 && request.status === 200) {
+                    var json = JSON.parse(request.responseText);
+                    console.log("Sub:");
+                    var access_token_claims = parseJwt(json.access_token);
+                    var id_token_claims = parseJwt(json.id_token);
+                    console.log("Default  Access Token:");
+                    console.log(json.access_token);
+                    console.log("Default  ID Token:");
+                    console.log(json.id_token);
+                    document.getElementById("pkcediv").style.display = "none";
+                    document.getElementById("accesstokendiv").innerHTML = "Text" + "<br><br><br>";
+                    document.getElementById("validatestatusdiv1").style.display = "block";
+                    document.getElementById("implicitdiv2").style.display = "block";
+                    if (access_token_claims.mobileenrollment) {
+                        printStatus("SUCCESS", "You can now enroll your phone!")
+                        document.getElementById("accesstokendiv").innerHTML = "Your phone enrollment has been approved and authorized for <b>15 Minutes</b>. Please enroll your phone now." + "<br><br><br>";
+                        document.getElementById("validatestatusdiv1").style.display = "block";
+                        document.getElementById("implicitdiv2").style.display = "block";
+                        getUserInfo(json.access_token);
+                    } else {
+                        printStatus("Hi " + id_token_claims.name + ",", "We're authorizing your enrollment request to enroll your <b>" + localStorage.getItem("phoneType") + "</b>. Please wait a moment...");
+                        console.log("Will start now for: " + id_token_claims.sub);
+                        console.log("ID token claims: " + id_token_claims);
+                        startEnrollment();
+                        var intervalId = window.setInterval(function() {
+                            getUserInfo(json.access_token, intervalId);
+                        }, 5000);
+                    }
+                } else if (request.readyState === 4 && request.status === 401) {
+                    console.log("FORBIDDEN!");
+                    console.log("Status: " + request.responseText);
+                    document.getElementById("validatestatusdiv1").innerHTML = "Something went wrong. Check return Status!" + "<br><br>";
+                    document.getElementById("validatestatusdiv1").style.display = "block";
+                    printStatus("FORBIDDEN!", "Could not exchange Code tor Token!");
+                }
+            };
+            var data = "client_id=" + client_id + "&code_verifier=" + verifier + "&redirect_uri=" + redirect_uri + "&grant_type=authorization_code&code=" + code;
+            console.log("Code: " + code);
+            console.log("Verifier: " + verifier);
+            request.send(data);
+        }
+
+        // Function to set Phone type
+        function setPhoneType(phoneType) {
+            localStorage.setItem("phoneType", phoneType);
+        }
+
+        function printStatus(status1, status2) {
+            document.getElementById("status1").innerHTML = status1;
+            document.getElementById("status2").innerHTML = status2;
+
+        }
+
+        function showDebug() {
+            if (document.getElementById("debugText").style.display == "block") {
+                document.getElementById("debugText").style.display = "none";
+            } else if (document.getElementById("debugText").style.display == "none") {
+                document.getElementById("debugText").style.display = "block";
+            }
+        }
+
+        function fail_success(text) {
+            document.getElementById("statusdiv").style.display = "block";
+            document.getElementById("statusdiv").innerHTML = text;
+        }
+    </script>
+
+    <style>
+        .phone-type-label {
+            cursor: pointer;
+        }
+        
+        .phone-type-label:hover {
+            color: #007BFF;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="colorlib-loader"></div>
+    <div id="page">
+        <nav class="colorlib-nav" role="navigation">
+            <div class="top-menu">
+                <div class="container">
+                    <div class="row">
+                        <div class="col-md-2">
+                            <!-- <div id="colorlib-logo"><a href="index.html">JAMF ENROLMENT PORTAL</a></div> Initial flow -->
+                        </div>
+                        <div class="col-md-10 text-right menu-1">
+                            <ul>
+                                <li class="active"><a href="XX">Enrollment Portal</a></li>
+                                <li><a href="XX">Wiki</a></li>
+                                <li class=""><a href="XX">SNOW</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <section id="home" class="video-hero" style="background-image: url(images/fs080lkljstV2JiLi417.jpg);  background-size:cover; background-position: center center;background-attachment:fixed;" data-section="home">
+            <div class="overlay"></div>
+            <a class="player" data-property="{videoURL:'',containment:'#home', showControls:false, autoPlay:true, loop:true, mute:true, startAt:0, opacity:1, quality:'default'}"></a>
+            <div class="display-t text-center">
+                <div class="display-tc">
+                    <div class="container">
+                        <div class="col-md-12 col-md-offset-0">
+                            <div class="animate-box">
+                                <h2 id="status1">Phone enrollment</h2>
+                                <div style="margin: 0 auto;">
+                                    <img src="images/KNAUF_Logo.png" style="max-height: 100px;"> 
+                                </div>
+                                <p id="status2">Please authenticate to start your mobile enrollment journey!</p>
+                                <!-- <div style="margin:0 auto;"><img src="images/XX"></div> -->
+
+                                
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="colorlib-featured">
+            <div class="row animate-box">
+                <div class="featured-wrap">
+                    <div class="col-md-8 col-md-offset-2" style="border-style: solid; border-width: 1px; background-color: white; padding-right: 130px; padding-left: 130px;">
+                        <div class="featured-entry">
+                            <br><br>
+                            <!-- Initial flow -->
+                            <div id="implicitdiv1" style="display:block">
+                                <div id="statusdiv" style="display:block"> This is a one-time authorization and valid for <b>30 minutes</b> only.<br><br>
+                                </div>
+                                <div>
+                                    <fieldset>
+                                        <legend>Which phone type are you going to enroll?</legend>
+                                        <div>
+                                            <input type="radio" id="iphone" name="phoneType" onclick="setPhoneType('iPhone')" checked>
+                                            <label for="iphone" class="phone-type-label">iPhone</label>
+                                        </div>
+                                        <div>
+                                            <input type="radio" id="iPad" name="phoneType" onclick="setPhoneType('iPad')">
+                                            <label for="iPad" class="phone-type-label">iPad</label>
+                                        </div>
+                                        <div>
+                                            <input type="radio" id="android" name="phoneType" onclick="setPhoneType('Android')">
+                                            <label for="android" class="phone-type-label">Android</label>
+                                        </div>
+                                    </fieldset>
+                                </div>
+                                <br>
+                                <a href="#" id="submit" onclick="invokeAuthCodePKCEToOrgServer()" class="btn btn-primary">Authorize Mobile Phone Enrollment</a>
+                                <br><br><br>
+                            </div>
+                            <div id="implicitdiv2" style="display:none">
+                                <div class="form-group">
+                                </div>
+                                <div id="implstatusdiv2" style="display:block">This process may take a minute. Please be patient. This page will reload automatically, once the approval process is finished. Thank you!
+                                </div>
+                                <input type="hidden" id="accesstokenbase64" value="">
+                                <div id="validatestatusdiv1" style="display:block">
+                                    <!-- Validation status -->
+                                </div><br><br>
+                            </div>
+                            <!-- Initial flow end -->
+                            <!-- Auth Code flow: Exchange Code for Token -->
+                            <div id="pkcediv" style="display:none">
+                                <div class="form-group">
+                                </div>
+                                <div id="codediv" style="display:block">We got the Code, let's exchange it for Access Token ...
+                                </div>
+                                <input type="hidden" id="authcodeinput" value="">
+                                <br>
+                                <br><br><br>
+                            </div>
+                            <div id="pkcediv2" style="display:none">
+                                <div class="form-group">
+                                </div>
+                                <div id="accesstokendiv" style="display:block">...
+                                </div>
+                            </div>
+                            <!-- AuthCode Flow end -->
+                            <!-- SUCCESS start -->
+                            <div id="successdiv" style="display:none">
+
+                            </div>
+                            <!-- SUCCESS end -->
+                            <!-- Statusdiv -->
+                            <div id="statusdiv" style="display:none">
+                                Want to enroll again? Reload page!
+                                <br><br><br>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gototop js-top">
+                    <a href="#" class="js-gotop"><i class="icon-arrow-up2"></i></a>
+                </div>
+            </div>
+        </div>
+        <!-- jQuery -->
+        <script src="js/jquery.min.js"></script>
+        <!-- jQuery Easing -->
+        <script src="js/jquery.easing.1.3.js"></script>
+        <!-- Bootstrap -->
+        <script src="js/bootstrap.min.js"></script>
+        <!-- Waypoints -->
+        <script src="js/jquery.waypoints.min.js"></script>
+        <!-- Stellar Parallax -->
+        <script src="js/jquery.stellar.min.js"></script>
+        <!-- YTPlayer -->
+        <script src="js/jquery.mb.YTPlayer.min.js"></script>
+        <!-- Owl carousel -->
+        <script src="js/owl.carousel.min.js"></script>
+        <!-- Magnific Popup -->
+        <script src="js/jquery.magnific-popup.min.js"></script>
+        <script src="js/magnific-popup-options.js"></script>
+        <!-- Counters -->
+        <script src="js/jquery.countTo.js"></script>
+        <!-- Main -->
+        <script src="js/main.js"></script>
+</body>
+
+</html>
