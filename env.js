@@ -1,5 +1,5 @@
  var client_id = "0oa9n0vclhQbIkZVm0x7";
- var redirect_uri = "https://anarabanana.github.io/jamf-enrollment/";
+ var redirect_uri = "https://anarabanana.github.io/mobile-enrollment-2/";
  var api = "https://knauf.oktapreview.com/";
  var authz = "https://knauf.oktapreview.com/oauth2";
  var orgz = "https://knauf.oktapreview.com/oauth2/";
